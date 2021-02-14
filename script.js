@@ -37,6 +37,14 @@ async function run() {
     // Create the model
     const model = createModel();
     tfvis.show.modelSummary({name: 'Model Summary'}, model);
+
+    // Convert data to a form that can be trained
+    const tensorData = convertToTensor(data);
+    const {inputs, labels} = tensorData;
+
+    // Train the model
+    await trainModel(model, inputs, labels);
+    console.log('Training finished!')
 }
 
 
@@ -61,6 +69,73 @@ function createModel() {
 
     return model;
 }
+
+
+/**
+ * Convert data to tensors that can be used for machine learning
+ * Also going to perform shuffling and normalizing on the MPG data
+ */
+
+ function convertToTensor(data) {
+     // The .tidy method will dispose of 
+     // intermediate tensors
+
+     return tf.tidy(() => {
+         // Shuffle the data - this should always be done before 
+         // passing the data to the training algorithms
+         tf.util.shuffle(data);
+
+         // Convert the data to Tensor
+         const inputs = data.map(data => data.horsepower);
+         const labels = data.map(data => data.mpg)
+
+         const inputTensor = tf.tensor2d(inputs, [inputs.length, 1]);
+         const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
+
+         // Normalize the data to fall within a range of 0-1 using min-max scaling
+         const inputMax = inputTensor.max();
+         const inputMin = inputTensor.min();
+         const labelMax = labelTensor.max();
+         const labelMin = labelTensor.min();
+
+         const normalizedInputs = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
+         const normalizedLabels = labelTensor.sub(labelMin).div(labelMax.sub(labelMin));
+
+         return {
+             inputs: normalizedInputs,
+             labels: normalizedLabels,
+             // Min max boundaries for later use
+             inputMax,
+             inputMin,
+             labelMax,
+             labelMin,
+         }
+         
+     });
+ }
+
+ async function trainModel(model, inputs, labels) {
+     // Prep model for training
+     model.compile({
+         optimizer: tf.train.adam(),
+         loss: tf.losses.meanSquaredError,
+         metrics: ['mse'],
+     });
+
+     const batchSize = 32;
+     const epochs = 50;
+
+     return await model.fit(inputs, labels, {
+         batchSize,
+         epochs,
+         shuffle: true,
+         callbacks: tfvis.show.fitCallbacks(
+             {name: 'Model Training Performance'},
+             ['loss', 'mse'],
+             {height: 200, callbacks: ['onEpochEnd']}
+             )
+     });
+ }
 
 
 document.addEventListener('DOMContentLoaded', run);
